@@ -1,0 +1,77 @@
+---
+title: "221213_Monthly State Retail Sales"
+author: "Nick van Doormaal"
+date: "14-12-2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+```
+
+## Load the data
+```{r load-data}
+state_retail <- 
+  readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-12-13/state_retail.csv',  col_types = "cciciiccc")
+
+coverage_codes <- 
+  readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-12-13/coverage_codes.csv')
+```
+
+## Look at Arizona data for no reason
+```{r filter-arizona}
+arizona <- state_retail %>% 
+  filter(
+    state_abbr == "AZ"
+  ) %>% 
+  ## change yoy-values to numeric
+  mutate(
+    across(
+      .cols = contains("yoy"), ~ as.numeric(.)
+    )
+  )
+```
+## Create a new year-month variable
+```{r add-datetime}
+arizona_ym <- arizona %>% 
+  mutate(
+    year_month = paste0(year, month),
+    year_month = lubridate::ym(year_month),
+    ## add lockdown status
+    lockdown = case_when(
+      year_month < "2020-03-01" ~ "Pre-Covid",
+      year_month < "2022-01-01" ~ "Pandemic and lockdown",
+      TRUE ~ "Post-Covid"
+    ),
+    ## refactor lockdown variable
+    lockdown = fct_relevel(lockdown, "Pre-Covid" , after = 0)
+  )
+```
+
+## Create plot
+```{r}
+arizona_plot <- arizona_ym %>% 
+  filter(
+    subsector != "total"
+  ) %>% 
+  ggplot(
+    aes(x = year_month, y = change_yoy)
+  ) +
+  annotate("rect",
+    xmin = ym("202003"), xmax = ym("202112"), ymin = -Inf, ymax = Inf, fill = "black", alpha = 0.2) +
+  geom_line(aes(col = subsector), size = 1.5, alpha = 0.5) +
+  scale_x_date(breaks = "3 months") +
+  scale_color_brewer(palette = "Paired") +
+  theme_bw() +
+  labs(
+    title = "Changes in montly sales over time per subsector for the state of Arizona",
+    subtitle = "Shaded area highligts the COVID-pandemic and lockdowns",
+    x = "Time (in months)",
+    y = "Percentual change in sales",
+  )
+arizona_plot
+```
+
