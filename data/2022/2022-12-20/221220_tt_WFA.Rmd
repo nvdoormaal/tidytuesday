@@ -10,24 +10,134 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(sf)
+library(stars)
+library(gstat)
 library(ggplot2)
 
 theme_set(theme_bw())
 ```
 
-```{r}
-usa <- read_sf(
+# Load data
+## get shapfile
+```{r load-usa}
+usa <- sf::read_sf(
   here::here("data", "GIS", "ne_50m_admin_1_states_provinces.shp")
 ) %>%
   filter(
     iso_a2 == "US",
     woe_name != "Alaska",
     woe_name != "Hawaii"
-  )
+  ) %>% 
+  st_transform(crs = 5070)
 
 ggplot() + 
   geom_sf(data = usa)
 ```
+
+## get data
+```{r load-data}
+weather_forecasts <- readr::read_csv(
+  "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-12-20/weather_forecasts.csv")
+```
+
+# Data cleaning
+## Remove NAs
+```{r clean-data}
+forecasts_nona <- weather_forecasts %>% 
+  filter(
+    !is.na(forecast_temp),
+    !is.na(observed_temp),
+    possible_error == "none"
+  )
+```
+
+## Summarising
+```{r summarise-data}
+forecasts_sum <- forecasts_nona %>% 
+  mutate(
+    temp_diff = forecast_temp - observed_temp
+  ) %>% 
+  group_by(
+    state, city
+  ) %>% 
+  summarise(
+    average_observed = mean(observed_temp),
+    average_forecast = mean(forecast_temp),
+    average_diff = mean(temp_diff),
+    sd_observed = sd(observed_temp),
+    sd_forecast = sd(forecast_temp),
+    sd_diff = sd(temp_diff),
+    min_observed = min(observed_temp),
+    min_forecast = min(forecast_temp),
+    min_diff = min(temp_diff),
+    max_observed = max(observed_temp),
+    max_forecast = max(forecast_temp),
+    max_diff = max(temp_diff)
+  )
+```
+
+# Spatial analyses
+## Get coordinates
+```{r get-coordinates}
+forecasts_xy <- forecasts_sum %>% 
+  left_join(
+    y = cities %>% select(city:lat)
+  ) %>% 
+  st_as_sf(
+    coords = c("lon", "lat"), crs = 4326
+  ) %>% 
+  st_transform(crs = 5070) %>% 
+  st_crop(y = usa)
+```
+
+## Create grid for interpolation
+```{r create-grid}
+usa_grid <- usa %>% 
+  st_bbox() %>% 
+  st_as_stars(dx = 10000) %>% 
+  st_crop(usa)
+```
+
+## Inverse distance interpolation
+```{r idw}
+temperature_idw <- idw(average_diff ~ 1, 
+                       forecasts_xy, usa_grid, idp = 5)
+```
+
+## Sample variogram
+```{r variogram}
+v <- variogram(average_diff ~ 1, forecasts_xy)
+
+v.m <- fit.variogram(v, vgm(1, "Exp", 50000, 1))
+
+k <- krige(average_diff ~ 1, forecasts_xy, usa_grid, v.m)
+```
+
+# Create map
+```{r maps}
+ggplot() + 
+  geom_stars(data = k, 
+             aes(fill = var1.pred, x = x, y = y)) + 
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red") +
+    geom_sf(data = usa, color = "black", fill = NA) + 
+    geom_sf(data = forecasts_xy) +
+  ggtitle("v.m exp")
+
+
+```
+
+
+# Spatial kriging
+```{r}
+# The actual interpolation, I don't really understand everything here :)
+gs <- gstat(formula = wind ~ 1, locations = ~ x + y, data = cities_nona)
+v <- variogram(gs, width = 1)
+fvs <- fit.variogram(v, vgm("Sph"))
+
+k <- gstat(formula = wind ~ 1, locations= ~ x + y, data = cities_nona, model = fvs)
+kp <- terra::interpolate(us_grid, k)
+```
+
 
 ```{r}
 dftest <- tibble(
@@ -40,13 +150,34 @@ dftest <- tibble(
   om = sample(
     1:4, size = 100, replace = TRUE
   )
-) 
+)
+df_int_sf <- tibble(
+  x = sample(
+  seq(from = 39.11550, to = 39.13100, by = 0.00001), size = 100
+  ),
+  y = sample(
+    seq(from = -96.636500, to = -96.634900, by = 0.000001), size = 100
+  )
+) %>% 
+  # st_as_sf(
+  #   coords = c("x", "y"), crs = 4326
+  # )
+
+dftest_sf <- st_as_sf(dftest,
+                      coords = c("x", "y"), crs = 4326)
+
+# Variogram
+lzn.vgm <- variogram(log(om)~1, dftest_sf)
+lzn.fit <- fit.variogram(lzn.vgm, vgm("Mat"), fit.kappa = TRUE)
 
 ggplot(
   data = dftest, aes(x = x, y = y)
 ) +
   geom_point(
     aes(size = om), color = 'red', alpha = 3/4) +
+  geom_point(
+    data = df_int_sf, aes(x = x, y = y), color = "black", alpha = 1/3
+  ) +
   coord_equal()
 
 https://stackoverflow.com/questions/71619688/kriging-with-gstat-in-r-resulting-object-is-blank-with-no-interpolated-values
