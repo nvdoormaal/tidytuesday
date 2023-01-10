@@ -1,0 +1,54 @@
+---
+title: "Weather Forecasts Accuracy"
+author: "Nick van Doormaal"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(sf)
+library(ggplot2)
+
+theme_set(theme_bw())
+```
+
+```{r}
+usa <- read_sf(
+  here::here("data", "GIS", "ne_50m_admin_1_states_provinces.shp")
+) %>%
+  filter(
+    iso_a2 == "US",
+    woe_name != "Alaska",
+    woe_name != "Hawaii"
+  )
+
+ggplot() + 
+  geom_sf(data = usa)
+```
+
+```{r}
+dftest <- tibble(
+  x = sample(
+  seq(from = 39.11900, to = 39.12900, by = 0.00001), size = 100
+  ),
+  y = sample(
+    seq(from = -96.636000, to = -96.634400, by = 0.000001), size = 100
+  ),
+  om = sample(
+    1:4, size = 100, replace = TRUE
+  )
+) 
+
+ggplot(
+  data = dftest, aes(x = x, y = y)
+) +
+  geom_point(
+    aes(size = om), color = 'red', alpha = 3/4) +
+  coord_equal()
+
+https://stackoverflow.com/questions/71619688/kriging-with-gstat-in-r-resulting-object-is-blank-with-no-interpolated-values
+```
+
