@@ -13,6 +13,7 @@ library(sf)
 library(ggplot2)
 library(ggrepel)
 library(ggspatial)
+library(ggthemes)
 
 theme_set(theme_bw())
 ```
@@ -82,7 +83,7 @@ rare_birds_map <-
   ) +
   ggspatial::annotation_north_arrow(location = "tl") +
   ggspatial::annotation_scale() +
-  theme_void()
+  ggthemes::theme_map()
 ```
 
 # Create plot
@@ -98,6 +99,48 @@ counts <- rare_birds %>%
     x = "Number of states with observations",
     y = ""
   )
+```
+
+# Variation 2
+## Create owl set
+```{r v2-owls}
+owls <- data_dictonary %>% 
+  filter(
+    ORDER1 == "Strigiformes"
+  )
+```
+
+## Edit data
+```{r v2-cleaning}
+# Only keep metropolitan states and owls
+north_america <- sf::read_sf(
+  here::here("data", "GIS", "ne_50m_admin_1_states_provinces.shp")
+) %>% 
+  filter(
+    iso_a2 == "US",
+    name != "Alaska",
+    name != "Hawaii"
+  )
+feederwatch_owls <- feederwatch %>% 
+  filter(
+    startsWith(subnational1_code, "US"), 
+    str_detect(subnational1_code, pattern = "(AK)|(HI)", negate = T),
+    species_code %in% owls$SPECIES_CODE
+  ) %>% 
+  left_join(
+    y = owls %>% select(SPECIES_CODE, PRIMARY_COM_NAME),
+    by = c("species_code" = "SPECIES_CODE")
+  )
+```
+## Create owl map
+```{r}
+ggplot() + 
+  geom_sf(data = north_america) +
+  geom_point(data = feederwatch_owls,
+             aes(x = longitude, y = latitude, color = PRIMARY_COM_NAME),
+             size = 3) +
+  scale_color_manual(values = palette("Okabe-Ito"))
+  
 ```
 
 
