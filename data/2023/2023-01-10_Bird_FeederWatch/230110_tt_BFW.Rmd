@@ -9,7 +9,10 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
+library(sf)
 library(ggplot2)
+library(ggrepel)
+library(ggspatial)
 
 theme_set(theme_bw())
 ```
@@ -20,5 +23,81 @@ feederwatch <- readr::read_csv(
   'https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-10/PFW_2021_public.csv')
 site_data <- readr::read_csv(
   'https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-10/PFW_count_site_data_public_2021.csv')
+
+## read data dictonary with species code
+data_dictonary <- readxl::read_xlsx(
+  here::here('data', '2023' , '2023-01-10_Bird_FeederWatch', 'FeederWatch_Data_Dictionary.xlsx'),
+  sheet = 5
+)
 ```
+
+## Load shapefile
+```{r load-shp}
+north_america <- sf::read_sf(
+  here::here("data", "GIS", "ne_50m_admin_1_states_provinces.shp")
+) %>% 
+  filter(
+    iso_a2 == "CA" | iso_a2 == "US"
+  )
+```
+
+
+# Data cleaning
+```{r clean-data}
+feederwatch_clean <- feederwatch %>% 
+  filter(
+    valid == 1,
+    effort_hrs_atleast > 1
+  )
+```
+
+## Get rarest birds
+```{r subset-data}
+rare_birds <- feederwatch_clean %>% 
+group_by(subnational1_code) %>% 
+  slice_min(how_many) %>% 
+  arrange(subnational1_code, -reviewed, -effort_hrs_atleast) %>% 
+  distinct(subnational1_code, .keep_all = TRUE) %>% 
+  left_join(
+    y = data_dictonary %>% select(SPECIES_CODE:PRIMARY_COM_NAME, EXTINCT),
+    by = c("species_code" = "SPECIES_CODE")
+  ) %>% 
+  ungroup()
+```
+
+# Create map
+```{r}
+rare_birds_map <- 
+  ggplot(
+  data = rare_birds, aes(x = longitude, y = latitude)
+) +
+  geom_sf(data = north_america, inherit.aes = FALSE, color = "white", fill = "black") +
+  geom_point(color = "orange", show.legend = FALSE) +
+  ggrepel::geom_label_repel(aes(label = PRIMARY_COM_NAME), max.overlaps = 10, size = 3) +
+  scale_color_viridis_d() +
+  labs(
+    title = "Rarest bird observation per state",
+    subtitle = "TidyTuesday 10 January 2023",
+    caption = "Data from Bird FeederWatch"
+  ) +
+  ggspatial::annotation_north_arrow(location = "tl") +
+  ggspatial::annotation_scale() +
+  theme_void()
+```
+
+# Create plot
+```{r}
+counts <- rare_birds %>% 
+  count(PRIMARY_COM_NAME, sort = TRUE) %>% 
+  filter(n >= 2) %>% 
+  ggplot(data = .) +
+  geom_col(aes(x = n, y = fct_reorder(PRIMARY_COM_NAME, n)),
+           fill = "orange", color = "black") +
+  labs(
+    title = "Most frequent sighted rare bird",
+    x = "Number of states with observations",
+    y = ""
+  )
+```
+
 
