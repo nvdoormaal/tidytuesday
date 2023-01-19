@@ -1,0 +1,21 @@
+---
+title: "Art History"
+author: "Nick van Doormaal"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+theme_set(theme_bw())
+```
+
+# Load data
+```{r load-github}
+artists <- readr::read_csv(
+"https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-01-17/artists.csv")
+``
+
